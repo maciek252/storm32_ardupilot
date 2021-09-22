@@ -48,9 +48,11 @@ void AP_Mount_Backend::handle_mount_configure(const mavlink_mount_configure_t &p
 // process MOUNT_CONTROL messages received from GCS. deprecated.
 void AP_Mount_Backend::handle_mount_control(const mavlink_mount_control_t &packet)
 {
+//OW this is a serious bug!
     control((int32_t)packet.input_a, (int32_t)packet.input_b, (int32_t)packet.input_c, _state._mode);
 }
 
+//OW this is a serious bug!
 void AP_Mount_Backend::control(int32_t pitch_or_lat, int32_t roll_or_lon, int32_t yaw_or_alt, MAV_MOUNT_MODE mount_mode)
 {
     _frontend.set_mode(_instance, mount_mode);
@@ -64,6 +66,7 @@ void AP_Mount_Backend::control(int32_t pitch_or_lat, int32_t roll_or_lon, int32_
 
         // set earth frame target angles from mavlink message
         case MAV_MOUNT_MODE_MAVLINK_TARGETING:
+//OW THIS IS A SERIOUS BUG !!!
             set_angle_targets(roll_or_lon*0.01f, pitch_or_lat*0.01f, yaw_or_alt*0.01f);
             break;
 
@@ -185,7 +188,7 @@ bool AP_Mount_Backend::calc_angle_to_location(const struct Location &target, Vec
     if (!AP::ahrs().get_position(current_loc)) {
         return false;
     }
-    const float GPS_vector_x = Location::diff_longitude(target.lng,current_loc.lng)*cosf(ToRad((current_loc.lat+target.lat)*0.00000005f))*0.01113195f;
+    const float GPS_vector_x = (target.lng-current_loc.lng)*cosf(ToRad((current_loc.lat+target.lat)*0.00000005f))*0.01113195f;
     const float GPS_vector_y = (target.lat-current_loc.lat)*0.01113195f;
     int32_t target_alt_cm = 0;
     if (!target.get_alt_cm(Location::AltFrame::ABOVE_HOME, target_alt_cm)) {
