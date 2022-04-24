@@ -16,7 +16,7 @@
 #include "AP_Generator_IE_FuelCell.h"
 #include <AP_SerialManager/AP_SerialManager.h>
 
-#if GENERATOR_ENABLED
+#if HAL_GENERATOR_ENABLED
 
 // Initialize the fuelcell object and prepare it for use
 void AP_Generator_IE_FuelCell::init()
@@ -28,6 +28,7 @@ void AP_Generator_IE_FuelCell::init()
         return;
     }
     _uart->begin(AP::serialmanager().find_baudrate(AP_SerialManager::SerialProtocol_Generator, 0));
+    _health_warn_last_ms = AP_HAL::millis();
 }
 
 // Update fuelcell, expected to be called at 20hz

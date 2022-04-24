@@ -11,7 +11,7 @@ APJ_BOARD_ID 1013
 OSCILLATOR_HZ 8000000
 
 FLASH_SIZE_KB 2048
-env OPTIMIZE -O2
+env OPTIMIZE -Os
 
 # bootloader takes first sector
 FLASH_RESERVE_START_KB 128
@@ -119,7 +119,7 @@ PB9 UART4_TX UART4
 PB8 UART4_RX UART4
 
 # USART6 (RC input), SERIAL7
-PC7 TIM3_CH2 TIM3 RCININT FLOAT LOW
+PC7 TIM3_CH2 TIM3 RCININT PULLDOWN LOW
 PC6 USART6_TX USART6 NODMA
 
 # as an alternative config setup the RX6 pin as a uart. This allows
@@ -178,7 +178,7 @@ define HAL_STORAGE_SIZE 16384
 
 # use last 2 pages for flash storage
 # H743 has 16 pages of 128k each
-define STORAGE_FLASH_PAGE 14
+STORAGE_FLASH_PAGE 14
 
 # spi devices
 SPIDEV mpu6000   SPI1 DEVID1 IMU1_CS      MODE3  1*MHZ  4*MHZ
@@ -194,7 +194,6 @@ SPIDEV pixartflow   SPI3 DEVID1  EXT_CS1  MODE3   2*MHZ  2*MHZ
 # no built-in compass, but probe the i2c bus for all possible
 # external compass types
 define ALLOW_ARM_NO_COMPASS
-define HAL_COMPASS_DEFAULT HAL_COMPASS_NONE
 define HAL_PROBE_EXTERNAL_I2C_COMPASSES
 define HAL_I2C_INTERNAL_MASK 0
 define HAL_COMPASS_AUTO_ROT_DEFAULT 2

@@ -50,6 +50,10 @@ void Plane::fence_check()
         // user disables/re-enables using the fence channel switch
         return;
     }
+    
+     if(new_breaches && plane.is_flying()) {
+         GCS_SEND_TEXT(MAV_SEVERITY_NOTICE, "Fence Breached");
+     }
 
     if (new_breaches || orig_breaches) {
         // if the user wants some kind of response and motors are armed
@@ -60,15 +64,18 @@ void Plane::fence_check()
         case AC_FENCE_ACTION_GUIDED:
         case AC_FENCE_ACTION_GUIDED_THROTTLE_PASS:
         case AC_FENCE_ACTION_RTL_AND_LAND:
-            // make sure we don't auto trim the surfaces on this mode change
-            int8_t saved_auto_trim = g.auto_trim;
-            g.auto_trim.set(0);
             if (fence_act == AC_FENCE_ACTION_RTL_AND_LAND) {
+                if (control_mode == &mode_auto &&
+                    mission.get_in_landing_sequence_flag() &&
+                    (g.rtl_autoland == RtlAutoland::RTL_THEN_DO_LAND_START ||
+                     g.rtl_autoland == RtlAutoland::RTL_IMMEDIATE_DO_LAND_START)) {
+                    // already landing
+                    return;
+                }
                 set_mode(mode_rtl, ModeReason::FENCE_BREACHED);
             } else {
                 set_mode(mode_guided, ModeReason::FENCE_BREACHED);
             }
-            g.auto_trim.set(saved_auto_trim);
 
             if (fence.get_return_rally() != 0 || fence_act == AC_FENCE_ACTION_RTL_AND_LAND) {
                 guided_WP_loc = rally.calc_best_rally_or_home_location(current_loc, get_RTL_altitude_cm());

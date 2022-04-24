@@ -406,8 +406,10 @@ bool AP_Mission::replace_cmd(uint16_t index, const Mission_Command& cmd)
 /// is_nav_cmd - returns true if the command's id is a "navigation" command, false if "do" or "conditional" command
 bool AP_Mission::is_nav_cmd(const Mission_Command& cmd)
 {
-    // NAV commands all have ids below MAV_CMD_NAV_LAST except NAV_SET_YAW_SPEED
-    return (cmd.id <= MAV_CMD_NAV_LAST || cmd.id == MAV_CMD_NAV_SET_YAW_SPEED);
+    // NAV commands all have ids below MAV_CMD_NAV_LAST, plus some exceptions
+    return (cmd.id <= MAV_CMD_NAV_LAST ||
+            cmd.id == MAV_CMD_NAV_SET_YAW_SPEED ||
+            cmd.id == MAV_CMD_NAV_SCRIPT_TIME);
 }
 
 /// get_next_nav_cmd - gets next "navigation" command found at or after start_index
@@ -960,8 +962,12 @@ MAV_MISSION_RESULT AP_Mission::mavlink_int_to_mission_cmd(const mavlink_mission_
         break;
 
     case MAV_CMD_NAV_SPLINE_WAYPOINT:                   // MAV ID: 82
+#if APM_BUILD_TYPE(APM_BUILD_ArduPlane)
+        return MAV_MISSION_UNSUPPORTED;
+#else
         cmd.p1 = packet.param1;                         // delay at waypoint in seconds
         break;
+#endif
 
     case MAV_CMD_NAV_GUIDED_ENABLE:                     // MAV ID: 92
         cmd.p1 = packet.param1;                         // on/off. >0.5 means "on", hand-over control to external controller
@@ -1158,6 +1164,17 @@ MAV_MISSION_RESULT AP_Mission::mavlink_int_to_mission_cmd(const mavlink_mission_
         cmd.content.scripting.p3 = packet.param4;
         break;
 
+    case MAV_CMD_NAV_SCRIPT_TIME:
+        cmd.content.nav_script_time.command = packet.param1;
+        cmd.content.nav_script_time.timeout_s = packet.param2;
+        cmd.content.nav_script_time.arg1 = packet.param3;
+        cmd.content.nav_script_time.arg2 = packet.param4;
+        break;
+
+    case MAV_CMD_DO_PAUSE_CONTINUE:
+        cmd.p1 = packet.param1;
+        break;
+        
     default:
         // unrecognised command
         return MAV_MISSION_UNSUPPORTED;
@@ -1610,6 +1627,17 @@ bool AP_Mission::mission_cmd_to_mavlink_int(const AP_Mission::Mission_Command& c
         packet.param4 = cmd.content.scripting.p3;
         break;
 
+    case MAV_CMD_NAV_SCRIPT_TIME:
+        packet.param1 = cmd.content.nav_script_time.command;
+        packet.param2 = cmd.content.nav_script_time.timeout_s;
+        packet.param3 = cmd.content.nav_script_time.arg1;
+        packet.param4 = cmd.content.nav_script_time.arg2;
+        break;
+
+    case MAV_CMD_DO_PAUSE_CONTINUE:
+        packet.param1 = cmd.p1;
+        break;
+        
     default:
         // unrecognised command
         return false;
@@ -1999,7 +2027,7 @@ uint16_t AP_Mission::get_landing_sequence_start()
 {
     struct Location current_loc;
 
-    if (!AP::ahrs().get_position(current_loc)) {
+    if (!AP::ahrs().get_location(current_loc)) {
         return 0;
     }
 
@@ -2058,7 +2086,7 @@ bool AP_Mission::jump_to_abort_landing_sequence(void)
     struct Location current_loc;
 
     uint16_t abort_index = 0;
-    if (AP::ahrs().get_position(current_loc)) {
+    if (AP::ahrs().get_location(current_loc)) {
         float min_distance = FLT_MAX;
 
         for (uint16_t i = 1; i < num_commands(); i++) {
@@ -2125,7 +2153,7 @@ bool AP_Mission::is_best_land_sequence(void)
 
     // get our current location
     Location current_loc;
-    if (!AP::ahrs().get_position(current_loc)) {
+    if (!AP::ahrs().get_location(current_loc)) {
         // we don't know where we are!!
         return false;
     }
@@ -2328,6 +2356,10 @@ const char *AP_Mission::Mission_Command::type() const
         return "Jump";
     case MAV_CMD_DO_GO_AROUND:
         return "Go Around";
+    case MAV_CMD_NAV_SCRIPT_TIME:
+        return "NavScriptTime";
+    case MAV_CMD_DO_PAUSE_CONTINUE:
+        return "PauseContinue";
 
     default:
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
@@ -2365,7 +2397,7 @@ void AP_Mission::reset_wp_history(void)
 // store the latest reported position incase of mission exit and rewind resume
 void AP_Mission::update_exit_position(void)
 {
-    if (!AP::ahrs().get_position(_exit_position)) {
+    if (!AP::ahrs().get_location(_exit_position)) {
         _exit_position.lat = 0;
         _exit_position.lng = 0;
     }

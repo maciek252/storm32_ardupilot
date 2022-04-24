@@ -19,6 +19,7 @@ import time
 import string
 import subprocess
 import sys
+import traceback
 import gzip
 
 # local imports
@@ -66,9 +67,6 @@ class build_binaries(object):
     def __init__(self, tags):
         self.tags = tags
         self.dirty = False
-        binaries_history_filepath = os.path.join(self.buildlogs_dirpath(),
-                                                 "build_binaries_history.sqlite")
-        self.history = build_binaries_history.BuildBinariesHistory(binaries_history_filepath)
 
     def progress(self, string):
         '''pretty-print progress'''
@@ -88,7 +86,7 @@ class build_binaries(object):
 
     def board_options(self, board):
         '''return board-specific options'''
-        if board == "bebop":
+        if board in ["bebop", "disco"]:
             return ["--static"]
         return []
 
@@ -348,6 +346,10 @@ is bob we will attempt to checkout bob-AVR'''
         '''returns content of filepath as a string'''
         with open(filepath, 'rb') as fh:
             content = fh.read()
+
+        if running_python3:
+            return content.decode('ascii')
+
         return content
 
     def string_in_filepath(self, string, filepath):
@@ -461,6 +463,9 @@ is bob we will attempt to checkout bob-AVR'''
                 except subprocess.CalledProcessError:
                     self.progress("waf configure failed")
                     continue
+
+                time_taken_to_configure = time.time() - t0
+
                 try:
                     target = os.path.join("bin",
                                           "".join([binaryname, framesuffix]))
@@ -476,10 +481,11 @@ is bob we will attempt to checkout bob-AVR'''
                     self.history.record_build(githash, tag, vehicle, board, frame, None, t0, time_taken_to_build)
                     continue
 
-                t1 = time.time()
-                time_taken_to_build = t1-t0
-                self.progress("Building %s %s %s %s took %u seconds" %
-                              (vehicle, tag, board, frame, time_taken_to_build))
+                time_taken_to_build = (time.time()-t0) - time_taken_to_configure
+
+                time_taken = time.time()-t0
+                self.progress("Making %s %s %s %s took %u seconds (configure=%u build=%u)" %
+                              (vehicle, tag, board, frame, time_taken, time_taken_to_configure, time_taken_to_build))
 
                 bare_path = os.path.join(self.buildroot,
                                          board,
@@ -504,6 +510,7 @@ is bob we will attempt to checkout bob-AVR'''
                     try:
                         self.copyit(path, ddir, tag, vehicle)
                     except Exception as e:
+                        self.print_exception_caught(e)
                         self.progress("Failed to copy %s to %s: %s" % (path, ddir, str(e)))
                 # why is touching this important? -pb20170816
                 self.touch_filepath(os.path.join(self.binaries,
@@ -513,6 +520,19 @@ is bob we will attempt to checkout bob-AVR'''
                 self.history.record_build(githash, tag, vehicle, board, frame, bare_path, t0, time_taken_to_build)
 
         self.checkout(vehicle, "latest")
+
+    def get_exception_stacktrace(self, e):
+        if sys.version_info[0] >= 3:
+            ret = "%s\n" % e
+            ret += ''.join(traceback.format_exception(etype=type(e),
+                                                      value=e,
+                                                      tb=e.__traceback__))
+            return ret
+        return traceback.format_exc(e)
+
+    def print_exception_caught(self, e, send_statustext=True):
+        self.progress("Exception caught: %s" %
+                      self.get_exception_stacktrace(e))
 
     def common_boards(self):
         '''returns list of boards common to all vehicles'''
@@ -578,6 +598,15 @@ is bob we will attempt to checkout bob-AVR'''
                            "AP_Periph",
                            "AP_Periph")
 
+    def build_blimp(self, tag):
+        '''build Blimp binaries'''
+        boards = self.common_boards()
+        self.build_vehicle(tag,
+                           "Blimp",
+                           boards,
+                           "Blimp",
+                           "blimp")
+
     def generate_manifest(self):
         '''generate manigest files for GCS to download'''
         self.progress("Generating manifest")
@@ -637,6 +666,12 @@ is bob we will attempt to checkout bob-AVR'''
     def run(self):
         self.validate()
 
+        self.mkpath(self.buildlogs_dirpath())
+
+        binaries_history_filepath = os.path.join(
+            self.buildlogs_dirpath(), "build_binaries_history.sqlite")
+        self.history = build_binaries_history.BuildBinariesHistory(binaries_history_filepath)
+
         prefix_bin_dirpath = os.path.join(os.environ.get('HOME'),
                                           "prefix", "bin")
         origin_env_path = os.environ.get("PATH")
@@ -688,6 +723,7 @@ is bob we will attempt to checkout bob-AVR'''
             self.build_antennatracker(tag)
             self.build_ardusub(tag)
             self.build_AP_Periph(tag)
+            self.build_blimp(tag)
             self.history.record_run(githash, tag, t0, time.time()-t0)
 
         if os.path.exists(self.tmpdir):

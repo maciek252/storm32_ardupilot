@@ -255,7 +255,7 @@ public:
     bool is_autopilot_mode() const override { return true; }
 
     // return if external control is allowed in this mode (Guided or Guided-within-Auto)
-    bool in_guided_mode() const override { return _submode == Auto_Guided; }
+    bool in_guided_mode() const override { return _submode == Auto_Guided || _submode == Auto_NavScriptTime; }
 
     // return distance (in meters) to destination
     float get_distance_to_destination() const override;
@@ -271,10 +271,21 @@ public:
     // start RTL (within auto)
     void start_RTL();
 
+    // lua accessors for nav script time support
+    bool nav_script_time(uint16_t &id, uint8_t &cmd, float &arg1, float &arg2);
+    void nav_script_time_done(uint16_t id);
+
     AP_Mission mission{
         FUNCTOR_BIND_MEMBER(&ModeAuto::start_command, bool, const AP_Mission::Mission_Command&),
         FUNCTOR_BIND_MEMBER(&ModeAuto::verify_command_callback, bool, const AP_Mission::Mission_Command&),
         FUNCTOR_BIND_MEMBER(&ModeAuto::exit_mission, void)};
+
+    enum Mis_Done_Behave {
+        MIS_DONE_BEHAVE_HOLD      = 0,
+        MIS_DONE_BEHAVE_LOITER    = 1,
+        MIS_DONE_BEHAVE_ACRO      = 2,
+        MIS_DONE_BEHAVE_MANUAL    = 3
+    };
 
 protected:
 
@@ -287,7 +298,8 @@ protected:
         Auto_RTL,               // perform RTL within auto mode
         Auto_Loiter,            // perform Loiter within auto mode
         Auto_Guided,            // handover control to external navigation system from within auto mode
-        Auto_Stop               // stop the vehicle as quickly as possible
+        Auto_Stop,              // stop the vehicle as quickly as possible
+        Auto_NavScriptTime,     // accept targets from lua scripts while NAV_SCRIPT_TIME commands are executing
     } _submode;
 
 private:
@@ -323,14 +335,12 @@ private:
     void do_set_home(const AP_Mission::Mission_Command& cmd);
     void do_set_reverse(const AP_Mission::Mission_Command& cmd);
     void do_guided_limits(const AP_Mission::Mission_Command& cmd);
+#if AP_SCRIPTING_ENABLED
+    void do_nav_script_time(const AP_Mission::Mission_Command& cmd);
+    bool verify_nav_script_time();
+#endif
 
-    enum Mis_Done_Behave {
-        MIS_DONE_BEHAVE_HOLD      = 0,
-        MIS_DONE_BEHAVE_LOITER    = 1,
-        MIS_DONE_BEHAVE_ACRO      = 2,
-        MIS_DONE_BEHAVE_MANUAL    = 3
-    };
-
+    bool waiting_to_start;  // true if waiting for EKF origin before starting mission
     bool auto_triggered;        // true when auto has been triggered to start
 
     // HeadingAndSpeed sub mode variables
@@ -361,6 +371,18 @@ private:
     uint32_t nav_delay_time_max_ms;  // used for delaying the navigation commands
     uint32_t nav_delay_time_start_ms;
 
+#if AP_SCRIPTING_ENABLED
+    // nav_script_time command variables
+    struct {
+        bool done;          // true once lua script indicates it has completed
+        uint16_t id;        // unique id to avoid race conditions between commands and lua scripts
+        uint32_t start_ms;  // system time nav_script_time command was received (used for timeout)
+        uint8_t command;    // command number provided by mission command
+        uint8_t timeout_s;  // timeout (in seconds) provided by mission command
+        float arg1;         // 1st argument provided by mission command
+        float arg2;         // 2nd argument provided by mission command
+    } nav_scripting;
+#endif
 };
 
 
@@ -406,6 +428,9 @@ public:
     // vehicle start loiter
     bool start_loiter();
 
+    // start stopping
+    void start_stop();
+
     // guided limits
     void limit_set(uint32_t timeout_ms, float horiz_max);
     void limit_clear();
@@ -419,7 +444,8 @@ protected:
         Guided_HeadingAndSpeed,
         Guided_TurnRateAndSpeed,
         Guided_Loiter,
-        Guided_SteeringAndThrottle
+        Guided_SteeringAndThrottle,
+        Guided_Stop
     };
 
     bool _enter() override;

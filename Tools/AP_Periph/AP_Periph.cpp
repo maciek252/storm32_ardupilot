@@ -21,12 +21,14 @@
 
  */
 #include <AP_HAL/AP_HAL.h>
+#include <AP_HAL/AP_HAL_Boards.h>
 #include "AP_Periph.h"
 #include <stdio.h>
 
 #if CONFIG_HAL_BOARD == HAL_BOARD_CHIBIOS
 #include <AP_HAL_ChibiOS/hwdef/common/stm32_util.h>
 #include <AP_HAL_ChibiOS/hwdef/common/watchdog.h>
+#include <AP_HAL_ChibiOS/I2CDevice.h>
 #endif
 
 extern const AP_HAL::HAL &hal;
@@ -111,6 +113,7 @@ void AP_Periph_FW::init()
 
 #if HAL_GCS_ENABLED
     gcs().setup_console();
+    gcs().setup_uarts();
     gcs().send_text(MAV_SEVERITY_INFO, "AP_Periph GCS Initialised!");
 #endif
 
@@ -167,7 +170,7 @@ void AP_Periph_FW::init()
 #endif
 
 #ifdef HAL_PERIPH_NEOPIXEL_CHAN_WITHOUT_NOTIFY
-    hal.rcout->set_serial_led_num_LEDs(HAL_PERIPH_NEOPIXEL_CHAN_WITHOUT_NOTIFY, AP_HAL::RCOutput::MODE_NEOPIXEL);
+    hal.rcout->set_serial_led_num_LEDs(HAL_PERIPH_NEOPIXEL_CHAN_WITHOUT_NOTIFY, HAL_PERIPH_NEOPIXEL_COUNT_WITHOUT_NOTIFY, AP_HAL::RCOutput::MODE_NEOPIXEL);
 #endif
 
 #ifdef HAL_PERIPH_ENABLE_RC_OUT
@@ -179,9 +182,24 @@ void AP_Periph_FW::init()
 #endif
 
 #ifdef HAL_PERIPH_ENABLE_AIRSPEED
-    if (airspeed.enabled()) {
+    if (airspeed.enabled()){
+#if CONFIG_HAL_BOARD == HAL_BOARD_CHIBIOS
+        const bool pins_enabled = ChibiOS::I2CBus::check_select_pins(0x01);
+        if (pins_enabled) {
+            ChibiOS::I2CBus::set_bus_to_floating(0);
+#ifdef HAL_GPIO_PIN_LED_CAN_I2C
+            palWriteLine(HAL_GPIO_PIN_LED_CAN_I2C, 1);
+#endif
+        } else {
+            // Note: logging of ARSPD is not enabled currently. To enable, call airspeed.set_log_bit(); here
+            airspeed.init();
+        }
+#else
+        // Note: logging of ARSPD is not enabled currently. To enable, call airspeed.set_log_bit(); here
         airspeed.init();
+#endif
     }
+
 #endif
 
 #ifdef HAL_PERIPH_ENABLE_RANGEFINDER
@@ -213,6 +231,9 @@ void AP_Periph_FW::init()
     notify.init();
 #endif
 
+#if AP_SCRIPTING_ENABLED
+    scripting.init();
+#endif
     start_ms = AP_HAL::native_millis();
 }
 
